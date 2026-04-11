@@ -1,0 +1,32 @@
+name: Reusable Test
+
+on:
+  workflow_call:
+    inputs:
+      python_version:
+        type: string
+        default: "3.11"
+      dry_run:
+        type: boolean
+        default: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest
+
+      - name: Run tests
+        run: pytest tests/ -v
+        env:
+          PYTHONPATH: .
+          DRY_RUN: ${{ inputs.dry_run && 'true' || '' }}

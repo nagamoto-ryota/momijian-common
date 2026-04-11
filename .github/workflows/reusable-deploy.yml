@@ -1,0 +1,122 @@
+name: Reusable Deploy
+
+on:
+  workflow_call:
+    inputs:
+      service_name:
+        required: true
+        type: string
+      service_account:
+        type: string
+        default: "pdf-automation-sa@pdf-automation-487602.iam.gserviceaccount.com"
+      cloud_run_flags:
+        type: string
+        default: ""
+      health_endpoint:
+        type: string
+        default: "/health"
+      enable_preview:
+        type: boolean
+        default: false
+      env_vars:
+        type: string
+        default: ""
+        description: "Cloud Run環境変数（deploy-cloudrunのenv_vars形式）"
+      skip_smoke_test:
+        type: boolean
+        default: false
+    secrets:
+      cloud_run_secrets:
+        required: false
+        description: "Cloud Runシークレット（deploy-cloudrunのsecrets形式）"
+
+env:
+  PROJECT_ID: pdf-automation-487602
+  REGION: asia-northeast1
+
+jobs:
+  deploy:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/29391431111/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: ${{ inputs.service_account }}
+
+      - name: Deploy to Cloud Run
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v3
+        with:
+          service: ${{ inputs.service_name }}
+          region: ${{ env.REGION }}
+          source: .
+          flags: ${{ inputs.cloud_run_flags }}
+          env_vars: ${{ inputs.env_vars }}
+          secrets: ${{ secrets.cloud_run_secrets }}
+
+      - name: Smoke Test
+        if: ${{ !inputs.skip_smoke_test }}
+        run: |
+          sleep 5
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${{ steps.deploy.outputs.url }}${{ inputs.health_endpoint }}")
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::Smoke test failed! ${{ inputs.health_endpoint }} returned HTTP $STATUS"
+            exit 1
+          fi
+          echo "Smoke test passed (HTTP $STATUS)"
+
+  preview:
+    if: inputs.enable_preview && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/29391431111/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: ${{ inputs.service_account }}
+
+      - name: Deploy preview (no traffic)
+        id: preview
+        uses: google-github-actions/deploy-cloudrun@v3
+        with:
+          service: ${{ inputs.service_name }}
+          region: ${{ env.REGION }}
+          source: .
+          flags: ${{ inputs.cloud_run_flags }} --no-traffic --tag pr-${{ github.event.number }}
+
+      - name: Smoke Test (preview)
+        if: ${{ !inputs.skip_smoke_test }}
+        run: |
+          sleep 5
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${{ steps.preview.outputs.url }}${{ inputs.health_endpoint }}")
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::Preview smoke test failed! returned HTTP $STATUS"
+            exit 1
+          fi
+          echo "Preview smoke test passed (HTTP $STATUS)"
+
+      - name: Comment preview URL on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `Preview deployed!\n\nURL: ${{ steps.preview.outputs.url }}\nTag: \`pr-${{ github.event.number }}\`\n\nThis revision receives 0% traffic. Merge to promote to production.`
+            })
