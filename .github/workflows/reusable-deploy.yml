@@ -67,13 +67,23 @@ jobs:
           env_vars: ${{ inputs.env_vars }}
           secrets: ${{ secrets.cloud_run_secrets }}
 
+      - name: Get ID Token for Smoke Test
+        if: ${{ !inputs.skip_smoke_test && inputs.authenticated_smoke_test }}
+        id: id_token
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/29391431111/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: ${{ inputs.service_account }}
+          token_format: id_token
+          id_token_audience: ${{ steps.deploy.outputs.url }}
+          id_token_include_email: true
+
       - name: Smoke Test
         if: ${{ !inputs.skip_smoke_test }}
         run: |
           sleep 5
           if [ "${{ inputs.authenticated_smoke_test }}" = "true" ]; then
-            TOKEN=$(gcloud auth print-identity-token)
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -H "Authorization: Bearer $TOKEN" "${{ steps.deploy.outputs.url }}${{ inputs.health_endpoint }}")
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -H "Authorization: Bearer ${{ steps.id_token.outputs.id_token }}" "${{ steps.deploy.outputs.url }}${{ inputs.health_endpoint }}")
           else
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${{ steps.deploy.outputs.url }}${{ inputs.health_endpoint }}")
           fi
@@ -109,13 +119,23 @@ jobs:
           source: .
           flags: ${{ inputs.cloud_run_flags }} --no-traffic --tag pr-${{ github.event.number }}
 
+      - name: Get ID Token for Preview Smoke Test
+        if: ${{ !inputs.skip_smoke_test && inputs.authenticated_smoke_test }}
+        id: preview_id_token
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/29391431111/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: ${{ inputs.service_account }}
+          token_format: id_token
+          id_token_audience: ${{ steps.preview.outputs.url }}
+          id_token_include_email: true
+
       - name: Smoke Test (preview)
         if: ${{ !inputs.skip_smoke_test }}
         run: |
           sleep 5
           if [ "${{ inputs.authenticated_smoke_test }}" = "true" ]; then
-            TOKEN=$(gcloud auth print-identity-token)
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -H "Authorization: Bearer $TOKEN" "${{ steps.preview.outputs.url }}${{ inputs.health_endpoint }}")
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -H "Authorization: Bearer ${{ steps.preview_id_token.outputs.id_token }}" "${{ steps.preview.outputs.url }}${{ inputs.health_endpoint }}")
           else
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${{ steps.preview.outputs.url }}${{ inputs.health_endpoint }}")
           fi
