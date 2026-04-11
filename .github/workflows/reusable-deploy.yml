@@ -81,17 +81,22 @@ jobs:
       - name: Smoke Test
         if: ${{ !inputs.skip_smoke_test }}
         run: |
-          sleep 5
+          URL="${{ steps.deploy.outputs.url }}${{ inputs.health_endpoint }}"
+          AUTH_HEADER=""
           if [ "${{ inputs.authenticated_smoke_test }}" = "true" ]; then
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -H "Authorization: Bearer ${{ steps.id_token.outputs.id_token }}" "${{ steps.deploy.outputs.url }}${{ inputs.health_endpoint }}")
-          else
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${{ steps.deploy.outputs.url }}${{ inputs.health_endpoint }}")
+            AUTH_HEADER="-H \"Authorization: Bearer ${{ steps.id_token.outputs.id_token }}\""
           fi
-          if [ "$STATUS" != "200" ]; then
-            echo "::error::Smoke test failed! ${{ inputs.health_endpoint }} returned HTTP $STATUS"
-            exit 1
-          fi
-          echo "Smoke test passed (HTTP $STATUS)"
+          for i in 1 2 3; do
+            sleep 10
+            STATUS=$(eval curl -s -o /dev/null -w "%{http_code}" --max-time 10 $AUTH_HEADER "$URL")
+            echo "Attempt $i: HTTP $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              echo "Smoke test passed (HTTP $STATUS)"
+              exit 0
+            fi
+          done
+          echo "::error::Smoke test failed after 3 attempts! ${{ inputs.health_endpoint }} returned HTTP $STATUS"
+          exit 1
 
   preview:
     if: inputs.enable_preview && github.event_name == 'pull_request'
@@ -133,17 +138,22 @@ jobs:
       - name: Smoke Test (preview)
         if: ${{ !inputs.skip_smoke_test }}
         run: |
-          sleep 5
+          URL="${{ steps.preview.outputs.url }}${{ inputs.health_endpoint }}"
+          AUTH_HEADER=""
           if [ "${{ inputs.authenticated_smoke_test }}" = "true" ]; then
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -H "Authorization: Bearer ${{ steps.preview_id_token.outputs.id_token }}" "${{ steps.preview.outputs.url }}${{ inputs.health_endpoint }}")
-          else
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${{ steps.preview.outputs.url }}${{ inputs.health_endpoint }}")
+            AUTH_HEADER="-H \"Authorization: Bearer ${{ steps.preview_id_token.outputs.id_token }}\""
           fi
-          if [ "$STATUS" != "200" ]; then
-            echo "::error::Preview smoke test failed! returned HTTP $STATUS"
-            exit 1
-          fi
-          echo "Preview smoke test passed (HTTP $STATUS)"
+          for i in 1 2 3; do
+            sleep 10
+            STATUS=$(eval curl -s -o /dev/null -w "%{http_code}" --max-time 10 $AUTH_HEADER "$URL")
+            echo "Attempt $i: HTTP $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              echo "Preview smoke test passed (HTTP $STATUS)"
+              exit 0
+            fi
+          done
+          echo "::error::Preview smoke test failed after 3 attempts! returned HTTP $STATUS"
+          exit 1
 
       - name: Comment preview URL on PR
         uses: actions/github-script@v7
