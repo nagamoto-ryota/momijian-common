@@ -25,6 +25,11 @@ on:
       skip_smoke_test:
         type: boolean
         default: false
+      authenticated_smoke_test:
+        description: 'Use authenticated curl for smoke test (for --no-allow-unauthenticated services)'
+        required: false
+        type: boolean
+        default: false
     secrets:
       cloud_run_secrets:
         required: false
@@ -66,7 +71,12 @@ jobs:
         if: ${{ !inputs.skip_smoke_test }}
         run: |
           sleep 5
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${{ steps.deploy.outputs.url }}${{ inputs.health_endpoint }}")
+          if [ "${{ inputs.authenticated_smoke_test }}" = "true" ]; then
+            TOKEN=$(gcloud auth print-identity-token)
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -H "Authorization: Bearer $TOKEN" "${{ steps.deploy.outputs.url }}${{ inputs.health_endpoint }}")
+          else
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${{ steps.deploy.outputs.url }}${{ inputs.health_endpoint }}")
+          fi
           if [ "$STATUS" != "200" ]; then
             echo "::error::Smoke test failed! ${{ inputs.health_endpoint }} returned HTTP $STATUS"
             exit 1
@@ -103,7 +113,12 @@ jobs:
         if: ${{ !inputs.skip_smoke_test }}
         run: |
           sleep 5
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${{ steps.preview.outputs.url }}${{ inputs.health_endpoint }}")
+          if [ "${{ inputs.authenticated_smoke_test }}" = "true" ]; then
+            TOKEN=$(gcloud auth print-identity-token)
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -H "Authorization: Bearer $TOKEN" "${{ steps.preview.outputs.url }}${{ inputs.health_endpoint }}")
+          else
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${{ steps.preview.outputs.url }}${{ inputs.health_endpoint }}")
+          fi
           if [ "$STATUS" != "200" ]; then
             echo "::error::Preview smoke test failed! returned HTTP $STATUS"
             exit 1
