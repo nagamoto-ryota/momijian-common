@@ -4,9 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "momijian-common"
-version = "0.1.0"
+version = "0.2.0"
 description = "Common utilities for Momijian care services automation"
 requires-python = ">=3.11"
+dependencies = [
+    "tenacity>=8.2,<10.0",
+    "sentry-sdk>=2.0,<3.0",
+    "requests>=2.25",
+    "google-api-python-client>=2.0",
+]
 
 [project.optional-dependencies]
 test = ["pytest>=8.0"]
