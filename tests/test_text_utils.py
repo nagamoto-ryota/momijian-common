@@ -2,7 +2,7 @@
 
 import pytest
 
-from momijian_common.text_utils import normalize_japanese
+from momijian_common.text_utils import normalize_japanese, to_match_key
 
 
 class TestNormalizeJapanese:
@@ -128,3 +128,57 @@ class TestNormalizeJapanese:
     def test_combined_nfkc_and_kanji(self):
         """NFKC正規化と旧字体変換の組み合わせ"""
         assert normalize_japanese("　髙橋　惠子　") == "高橋 恵子"
+
+
+class TestToMatchKey:
+    """to_match_key() のテスト
+
+    NOTE: 戻り値は識別/比較目的のみ。実データとして保存・表示禁止。
+    マスタDB/CSVの原文は必ず別フィールドに保持し、
+    突合時の一時キーとしてのみ本関数を使用すること。
+    """
+
+    # --- 基本動作（normalize_japanese と同じ動作を確認）---
+
+    def test_nfkc_normalization(self):
+        """全角数字 → 半角（NFKC正規化が適用される）"""
+        assert to_match_key("１２３") == "123"
+
+    def test_strip_whitespace(self):
+        """前後の空白を除去"""
+        assert to_match_key("  田中太郎  ") == "田中太郎"
+
+    def test_old_kanji_conversion(self):
+        """旧字体 → 新字体変換（髙→高）"""
+        assert to_match_key("髙橋") == "高橋"
+
+    # --- identity property: 異体字ペアが同じキーを返す ---
+    # 保存禁止: 以下のアサートは「同じキーになる」ことだけを検証。
+    # 実際のマスタDB/CSVにはそれぞれ原文を保存すること。
+
+    def test_identity_tanisumi(self):
+        """伹住（U+4F39）と但住（U+4F46）が同じキーになる（nursing-sync 伹住節子さんの実例）"""
+        # 保存禁止: to_match_key の戻り値は突合用の一時キー
+        assert to_match_key("伹住 節子") == to_match_key("但住 節子")
+
+    def test_identity_hama(self):
+        """濱（旧字体）と浜（新字体）が同じキーになる"""
+        assert to_match_key("濱田") == to_match_key("浜田")
+
+    def test_identity_saki(self):
+        """﨑（立崎）と崎が同じキーになる"""
+        assert to_match_key("山﨑") == to_match_key("山崎")
+
+    def test_identity_megumi(self):
+        """惠（旧字体）と恵（新字体）が同じキーになる"""
+        assert to_match_key("惠子") == to_match_key("恵子")
+
+    # --- エッジケース ---
+
+    def test_empty_string(self):
+        """空文字列はそのまま返す"""
+        assert to_match_key("") == ""
+
+    def test_none_returns_none(self):
+        """None はそのまま返す（normalize_japanese と同じ挙動）"""
+        assert to_match_key(None) is None
