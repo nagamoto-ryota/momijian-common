@@ -38,6 +38,11 @@ class CloudLoggingFormatter(logging.Formatter):
         }
         if record.exc_info and record.exc_info[0] is not None:
             log_entry["exception"] = self.formatException(record.exc_info)
+        # extra={"json_fields": {...}} で渡された構造化フィールドをトップレベルにマージ
+        # 既存コード（json_fields を持たない呼び出し）には影響なし
+        json_fields = getattr(record, "json_fields", None)
+        if json_fields and isinstance(json_fields, dict):
+            log_entry.update(json_fields)
         return json.dumps(log_entry, ensure_ascii=False)
 
 
