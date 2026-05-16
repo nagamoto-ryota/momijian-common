@@ -12,10 +12,15 @@ dependencies = [
     "sentry-sdk>=2.0,<3.0",
     "requests>=2.25",
     "google-api-python-client>=2.0",
+    "google-auth>=2.0",
+    "google-cloud-secret-manager>=2.0",
 ]
 
 [project.optional-dependencies]
 test = ["pytest>=8.0"]
+auth = [
+    "google-auth-oauthlib>=1.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
