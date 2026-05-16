@@ -221,6 +221,87 @@ def get_gmail_service(
 
 
 # ---------------------------------------------------------------------------
+# get_dwd_gmail_service: DWD impersonation で任意ユーザーの Gmail service を返す
+# ---------------------------------------------------------------------------
+
+@functools.lru_cache(maxsize=32)
+def get_dwd_gmail_service(
+    impersonate_email: str,
+    scopes: tuple[str, ...] = ("https://www.googleapis.com/auth/gmail.send",),
+    sa_email: str | None = None,
+) -> "googleapiclient.discovery.Resource":
+    """DWD (Domain-Wide Delegation) で指定ユーザーに impersonate した Gmail service を返す。
+
+    aoi/services/gmail_service.py の _get_gmail_service と同じ IAM Signer パターン。
+    Cloud Run の ADC (compute_engine.Credentials) は with_subject 不可のため、
+    IAM Credentials API 経由で SA → user の委任 JWT に署名する。
+
+    Args:
+        impersonate_email: 委任先ユーザーの email (例: takada@momijian.co)
+        scopes: Gmail スコープ。送信用途は gmail.send のみで十分。
+            キャッシュキーは tuple 型であること（list 不可）。
+        sa_email: SA email。省略時は環境変数 SERVICE_ACCOUNT_EMAIL から取得。
+            それも未設定なら ADC の signer_email から自動解決する。
+
+    Raises:
+        ValueError: impersonate_email が空の場合
+        google.auth.exceptions.RefreshError: DWD 設定不備 / scope 未登録時。
+            Admin Console > セキュリティ > API制御 > ドメイン全体の委任 で
+            SA Client ID に対象 scope が登録されているか確認してください。
+
+    Notes:
+        - lru_cache(maxsize=32): 17名 + バッファ分をキャッシュ
+        - キャッシュキーは (impersonate_email, scopes, sa_email) の3-tuple
+    """
+    if not impersonate_email:
+        raise ValueError("impersonate_email は空にできません")
+
+    try:
+        from google.auth import default as google_auth_default, iam
+        from google.auth.transport import requests as google_requests
+        from google.oauth2 import service_account
+        from googleapiclient.discovery import build as _build
+    except ImportError as e:
+        raise ImportError(
+            f"必要なライブラリが不足しています: {e}\n"
+            "pip install google-api-python-client google-auth を実行してください。"
+        ) from e
+
+    # SA email の解決
+    resolved_sa_email = sa_email or os.environ.get("SERVICE_ACCOUNT_EMAIL", "")
+
+    # ADC から基本認証情報を取得
+    source_credentials, _ = google_auth_default()
+
+    # SA email が未設定の場合は ADC の signer_email から解決を試みる
+    if not resolved_sa_email:
+        resolved_sa_email = getattr(source_credentials, "service_account_email", "")
+    if not resolved_sa_email:
+        raise ValueError(
+            "SA email を解決できません。環境変数 SERVICE_ACCOUNT_EMAIL を設定するか、"
+            "sa_email 引数を指定してください。"
+        )
+
+    # IAM signer を使って SA として JWT に署名できるようにする
+    signer = iam.Signer(
+        request=google_requests.Request(),
+        credentials=source_credentials,
+        service_account_email=resolved_sa_email,
+    )
+
+    # DWD 用の SA 認証情報を構築（subject = 委任先ユーザー）
+    credentials = service_account.Credentials(
+        signer=signer,
+        service_account_email=resolved_sa_email,
+        token_uri="https://oauth2.googleapis.com/token",
+        scopes=list(scopes),
+        subject=impersonate_email,
+    )
+
+    return _build("gmail", "v1", credentials=credentials, cache_discovery=False)
+
+
+# ---------------------------------------------------------------------------
 # CLI エントリーポイント
 # ---------------------------------------------------------------------------
 

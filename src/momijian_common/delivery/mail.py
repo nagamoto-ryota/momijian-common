@@ -107,27 +107,43 @@ class MailChannel(DeliveryChannel):
         self,
         from_address: str,
         scopes: list[str] | None = None,
+        impersonate_user: str | None = None,
     ) -> None:
         """初期化。
 
         Args:
             from_address: 送信元メールアドレス（例: office@momijian.co）。
-            scopes: Gmail OAuth スコープ。省略時は gmail.modify（送信+アーカイブ両対応）。
+                impersonate_user 指定時は from_address と一致させること（受信者の混乱防止）。
+            scopes: Gmail OAuth スコープ。
+                省略時は impersonate_user なし → gmail.modify（送信+アーカイブ両対応）。
+                impersonate_user あり → gmail.send を推奨（最小権限）。
+            impersonate_user: DWD (Domain-Wide Delegation) で impersonate するユーザーの email。
+                None（既定）: 既存の OAuth refresh_token 経路（互換性維持）。
+                指定時: SA → user に DWD で委任して送信する。
+                NOTE: archive_message は impersonate_user のメールボックスを操作するため、
+                      DWD 経路では本人受信箱に影響する。archive は office@ チャネルで行うこと。
         """
         self._from_address = from_address
         self._scopes = tuple(
             scopes or ["https://www.googleapis.com/auth/gmail.modify"]
         )
+        self._impersonate_user = impersonate_user
         # _service は遅延初期化（初回 send/archive 時に取得）
         self._service: object | None = None
 
     def _get_service(self) -> object:
         """Gmail service を返す。lru_cache により同スコープは1回だけ取得。"""
         if self._service is None:
-            from momijian_common.auth.gmail_oauth import get_gmail_service
-
-            # get_gmail_service は tuple[str, ...] をキャッシュキーに使うので tuple で渡す
-            self._service = get_gmail_service(scopes=self._scopes)
+            if self._impersonate_user:
+                from momijian_common.auth.gmail_oauth import get_dwd_gmail_service
+                self._service = get_dwd_gmail_service(
+                    impersonate_email=self._impersonate_user,
+                    scopes=self._scopes,
+                )
+            else:
+                from momijian_common.auth.gmail_oauth import get_gmail_service
+                # get_gmail_service は tuple[str, ...] をキャッシュキーに使うので tuple で渡す
+                self._service = get_gmail_service(scopes=self._scopes)
         return self._service
 
     @property
@@ -173,7 +189,17 @@ class MailChannel(DeliveryChannel):
             )
 
         raw_encoded = _raw_encode(raw_bytes)
-        service = self._get_service()
+        try:
+            service = self._get_service()
+        except Exception as e:
+            return DeliveryResult(
+                success=False,
+                message_id=None,
+                channel=ChannelType.MAIL,
+                recipient=recipient,
+                error=f"Gmail サービス取得エラー: {e}",
+                sent_at=sent_at,
+            )
 
         last_error: str = ""
         for attempt, delay in enumerate((*_RETRY_DELAYS, None), start=0):  # type: ignore[misc]
