@@ -67,6 +67,23 @@ jobs:
           env_vars: ${{ inputs.env_vars }}
           secrets: ${{ secrets.cloud_run_secrets }}
 
+      # Force 100% traffic to the latest revision on every master deploy.
+      # deploy-cloudrun@v3 (gcloud run deploy) does NOT re-assign traffic when a
+      # service is pinned to a specific revision/tag (e.g. left over from a PR
+      # preview deploy that used --no-traffic --tag). Without this step, a master
+      # deploy can succeed + pass smoke test while production keeps serving an old
+      # revision. --to-latest puts the service into auto-traffic mode so future
+      # deploys auto-promote; --clear-tags removes stale pr-N preview tags.
+      # Note: --to-latest is NOT a valid `gcloud run deploy` flag, so this must be
+      # a separate `update-traffic` step, not added to the deploy `flags` input.
+      - name: Route 100% traffic to latest revision
+        run: |
+          gcloud run services update-traffic "${{ inputs.service_name }}" \
+            --region "${{ env.REGION }}" \
+            --to-latest \
+            --clear-tags \
+            --quiet
+
       - name: Get ID Token for Smoke Test
         if: ${{ !inputs.skip_smoke_test && inputs.authenticated_smoke_test }}
         id: id_token
