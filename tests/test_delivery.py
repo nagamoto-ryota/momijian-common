@@ -160,6 +160,70 @@ class TestMailChannelSendSuccess:
         assert result.error is None
 
 
+class TestMailChannelSendWithCategory:
+    """category 引数を渡すと X-Momijian-Category ヘッダーが MIME に含まれる。"""
+
+    def test_send_with_category_adds_header(self):
+        gmail_internal_id = "cat123"
+        rfc822_mid = "<category-test@mail.gmail.com>"
+
+        service = _make_service(
+            send_return={"id": gmail_internal_id},
+            get_return={
+                "payload": {
+                    "headers": [{"name": "Message-ID", "value": rfc822_mid}]
+                }
+            },
+        )
+
+        ch = MailChannel(from_address="office@momijian.co")
+        with patch.object(ch, "_get_service", return_value=service):
+            result = ch.send(
+                recipient="dest@example.com",
+                subject="提供票送付",
+                body="本文",
+                category="teikyohyou",
+            )
+
+        assert result.success is True
+
+        call_args = service.users().messages().send.call_args
+        raw_encoded = call_args[1]["body"]["raw"]
+        import base64
+        raw_bytes = base64.urlsafe_b64decode(raw_encoded)
+        assert b"X-Momijian-Category: teikyohyou" in raw_bytes
+
+    def test_send_without_category_no_header(self):
+        """category 省略時はヘッダーが付かない（既存挙動の維持）。"""
+        gmail_internal_id = "nocat123"
+        rfc822_mid = "<no-category-test@mail.gmail.com>"
+
+        service = _make_service(
+            send_return={"id": gmail_internal_id},
+            get_return={
+                "payload": {
+                    "headers": [{"name": "Message-ID", "value": rfc822_mid}]
+                }
+            },
+        )
+
+        ch = MailChannel(from_address="office@momijian.co")
+        with patch.object(ch, "_get_service", return_value=service):
+            result = ch.send(
+                recipient="dest@example.com",
+                subject="件名",
+                body="本文",
+            )
+
+        assert result.success is True
+
+        call_args = service.users().messages().send.call_args
+        raw_encoded = call_args[1]["body"]["raw"]
+        import base64
+        raw_bytes = base64.urlsafe_b64decode(raw_encoded)
+        assert b"X-Momijian-Category" not in raw_bytes
+
+
 class TestMailChannelSendWithAttachment:
     """PDF 1個添付して送信成功 — multipart 構築確認。"""
 

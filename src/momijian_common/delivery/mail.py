@@ -40,8 +40,14 @@ def _build_message(
     subject: str,
     body: str,
     attachments: list[Path] | None,
+    category: str | None = None,
 ) -> bytes:
-    """MIME メッセージを組み立て raw bytes を返す。添付ありは multipart/mixed。"""
+    """MIME メッセージを組み立て raw bytes を返す。添付ありは multipart/mixed。
+
+    category を渡すと X-Momijian-Category ヘッダーを付与する。
+    自動送信メールの発信元を識別するための任意メタデータ（例: shienkeika
+    の GAS が支援経過記録の対象から除外する判定に使う）。
+    """
     if attachments:
         msg: MIMEMultipart | MIMEText = MIMEMultipart("mixed")
         assert isinstance(msg, MIMEMultipart)
@@ -62,6 +68,8 @@ def _build_message(
     msg["From"] = from_address
     msg["To"] = recipient
     msg["Subject"] = _encode_subject(subject)
+    if category:
+        msg["X-Momijian-Category"] = category
 
     return msg.as_bytes()
 
@@ -157,6 +165,7 @@ class MailChannel(DeliveryChannel):
         subject: str,
         body: str,
         attachments: list[Path] | None = None,
+        category: str | None = None,
     ) -> DeliveryResult:
         """メールを送信して結果を返す。例外は再 raise しない。
 
@@ -167,6 +176,8 @@ class MailChannel(DeliveryChannel):
             subject: 件名。UTF-8 で自動エンコードされる。
             body: 本文テキスト。
             attachments: 添付ファイルの Path リスト。PDF 想定。
+            category: 送信メールに X-Momijian-Category ヘッダーとして付与する
+                任意の分類タグ（例: "teikyohyou"）。省略時はヘッダーを付けない。
 
         Returns:
             DeliveryResult: 成功時は success=True, message_id=<Message-ID ヘッダ値>。
@@ -176,7 +187,7 @@ class MailChannel(DeliveryChannel):
 
         try:
             raw_bytes = _build_message(
-                self._from_address, recipient, subject, body, attachments
+                self._from_address, recipient, subject, body, attachments, category
             )
         except Exception as e:
             return DeliveryResult(
