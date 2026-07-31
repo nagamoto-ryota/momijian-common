@@ -1,6 +1,6 @@
 """momijian_common.delivery の pytest テスト群。
 
-MailChannel (mail.py) と DeliveryLogger (logger.py) を mock で検証する。
+MailChannel、DeliveryLogger、BounceMonitor を mock で検証する。
 外部 API（Gmail / Sheets）は一切呼ばない。
 
 カバレッジ対象:
@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 import sys
+import types
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,7 @@ from unittest.mock import MagicMock, Mock, call, patch
 
 import pytest
 
+from momijian_common.delivery.bounce import BounceMonitor
 from momijian_common.delivery.channel import ChannelType, DeliveryResult
 from momijian_common.delivery.mail import MailChannel
 from momijian_common.delivery.logger import DeliveryLogger
@@ -466,6 +468,23 @@ class TestMailChannelArchiveNotFound:
 class TestDeliveryLoggerService:
     """認証環境に応じた Sheets API サービスを構築する。"""
 
+    def test_get_service_prefers_local_gcp_auth(self):
+        service = MagicMock()
+        gcp_auth = types.ModuleType("gcp_auth")
+        gcp_auth.get_sheets_service = MagicMock(  # type: ignore[attr-defined]
+            return_value=service
+        )
+
+        with (
+            patch.dict(sys.modules, {"gcp_auth": gcp_auth}),
+            patch("google.auth.default") as mock_default,
+        ):
+            actual = DeliveryLogger()._get_service()
+
+        assert actual is service
+        gcp_auth.get_sheets_service.assert_called_once_with()  # type: ignore[attr-defined]
+        mock_default.assert_not_called()
+
     def test_get_service_falls_back_to_adc_when_gcp_auth_is_unavailable(self):
         credentials = MagicMock()
         service = MagicMock()
@@ -491,6 +510,63 @@ class TestDeliveryLoggerService:
             "v4",
             credentials=credentials,
             cache_discovery=False,
+        )
+
+
+class TestBounceMonitorService:
+    """認証環境に応じた Sheets API サービスを構築する。"""
+
+    def test_get_sheets_service_falls_back_to_adc_when_gcp_auth_is_unavailable(self):
+        credentials = MagicMock()
+        service = MagicMock()
+        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+
+        with (
+            patch.dict(sys.modules, {"gcp_auth": None}),
+            patch(
+                "google.auth.default",
+                return_value=(credentials, "test-project"),
+            ) as mock_default,
+            patch(
+                "googleapiclient.discovery.build",
+                return_value=service,
+            ) as mock_build,
+        ):
+            actual = BounceMonitor(sheet_id="test-sheet")._get_sheets_service()
+
+        assert actual is service
+        mock_default.assert_called_once_with(scopes=scopes)
+        mock_build.assert_called_once_with(
+            "sheets",
+            "v4",
+            credentials=credentials,
+            cache_discovery=False,
+        )
+
+    def test_get_sheets_service_falls_back_to_adc_when_sa_key_is_missing(self):
+        credentials = MagicMock()
+        service = MagicMock()
+        gcp_auth = types.ModuleType("gcp_auth")
+        gcp_auth.get_sheets_service = MagicMock(  # type: ignore[attr-defined]
+            side_effect=FileNotFoundError("local-dev-sa.json")
+        )
+
+        with (
+            patch.dict(sys.modules, {"gcp_auth": gcp_auth}),
+            patch(
+                "google.auth.default",
+                return_value=(credentials, "test-project"),
+            ) as mock_default,
+            patch(
+                "googleapiclient.discovery.build",
+                return_value=service,
+            ),
+        ):
+            actual = BounceMonitor(sheet_id="test-sheet")._get_sheets_service()
+
+        assert actual is service
+        mock_default.assert_called_once_with(
+            scopes=["https://www.googleapis.com/auth/spreadsheets"]
         )
 
 
