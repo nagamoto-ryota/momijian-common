@@ -31,11 +31,10 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import sys
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
+from momijian_common.delivery._sheets import get_sheets_service
 from momijian_common.delivery.channel import DeliveryResult
 
 logger = logging.getLogger(__name__)
@@ -113,25 +112,7 @@ class DeliveryLogger:
                 "sheets", "v4", credentials=creds, cache_discovery=False
             )
         else:
-            # local-dev-sa 経由（既存スクリプト群と同一フロー）
-            scripts_dir = os.path.expanduser("~/.claude/scripts")
-            if scripts_dir not in sys.path:
-                sys.path.insert(0, scripts_dir)
-            try:
-                from gcp_auth import get_sheets_service  # type: ignore[import]
-            except ImportError:
-                # Cloud Run 等、ローカル専用 gcp_auth がない環境では ADC を使う
-                import google.auth
-                from googleapiclient.discovery import build
-
-                creds, _ = google.auth.default(
-                    scopes=["https://www.googleapis.com/auth/spreadsheets"]
-                )
-                self._service = build(
-                    "sheets", "v4", credentials=creds, cache_discovery=False
-                )
-            else:
-                self._service = get_sheets_service()
+            self._service = get_sheets_service()
 
         return self._service
 

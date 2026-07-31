@@ -306,13 +306,7 @@ class BounceMonitor:
     def _get_sheets_service(self) -> object:
         """Sheets API service を遅延初期化して返す（DeliveryLogger と同じフロー）。"""
         if self._sheets_service is None:
-            import os
-            import sys
-
-            scripts_dir = os.path.expanduser("~/.claude/scripts")
-            if scripts_dir not in sys.path:
-                sys.path.insert(0, scripts_dir)
-            from gcp_auth import get_sheets_service  # type: ignore[import]
+            from momijian_common.delivery._sheets import get_sheets_service
 
             self._sheets_service = get_sheets_service()
         return self._sheets_service
