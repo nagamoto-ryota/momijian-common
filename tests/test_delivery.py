@@ -13,6 +13,7 @@ MailChannel (mail.py) と DeliveryLogger (logger.py) を mock で検証する。
 from __future__ import annotations
 
 import re
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -461,6 +462,37 @@ class TestMailChannelArchiveNotFound:
 # ===========================================================================
 # DeliveryLogger テスト
 # ===========================================================================
+
+class TestDeliveryLoggerService:
+    """認証環境に応じた Sheets API サービスを構築する。"""
+
+    def test_get_service_falls_back_to_adc_when_gcp_auth_is_unavailable(self):
+        credentials = MagicMock()
+        service = MagicMock()
+        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+
+        with (
+            patch.dict(sys.modules, {"gcp_auth": None}),
+            patch(
+                "google.auth.default",
+                return_value=(credentials, "test-project"),
+            ) as mock_default,
+            patch(
+                "googleapiclient.discovery.build",
+                return_value=service,
+            ) as mock_build,
+        ):
+            actual = DeliveryLogger()._get_service()
+
+        assert actual is service
+        mock_default.assert_called_once_with(scopes=scopes)
+        mock_build.assert_called_once_with(
+            "sheets",
+            "v4",
+            credentials=credentials,
+            cache_discovery=False,
+        )
+
 
 def _make_result(
     success: bool = True,
