@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 
+
+logger = logging.getLogger(__name__)
 
 _SHEETS_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
@@ -17,12 +20,18 @@ def get_sheets_service() -> object:
 
     try:
         from gcp_auth import get_sheets_service as get_local_sheets_service
-    except ImportError:
+    except ImportError as exc:
+        # Cloud Run では gcp_auth が存在しないため ADC が正常経路。
+        # PC で google-auth 系の破損によりここへ落ちた場合も気づけるよう警告を残す
+        logger.warning("gcp_auth を import できないため ADC にフォールバック: %s", exc)
         return _get_adc_sheets_service()
 
     try:
         return get_local_sheets_service()
-    except FileNotFoundError:
+    except FileNotFoundError as exc:
+        # PC で SA 鍵が欠損・失効している場合。別 identity（ADC）での書き込みに
+        # 無音で切り替わると鍵の腐りが発覚しないため必ず警告する
+        logger.warning("SA 鍵が見つからないため ADC にフォールバック: %s", exc)
         return _get_adc_sheets_service()
 
 
