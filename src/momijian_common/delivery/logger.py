@@ -22,7 +22,7 @@
 
 認証:
     credentials_path が None の場合は ~/ .claude/scripts/gcp_auth.py の
-    local-dev-sa SA 鍵を使う（既存スクリプト群と同一認証フロー）。
+    local-dev-sa SA 鍵を優先し、利用できなければ ADC を使う。
     credentials_path が指定された場合は google-auth の
     service_account.Credentials として扱う。
 """
@@ -76,7 +76,8 @@ class DeliveryLogger:
     Args:
         sheet_id: マスタDB の Google Sheets ID。
         sheet_name: 書込み先シート名。デフォルト「送信ログ」。
-        credentials_path: SA 鍵 JSON ファイルパス。None なら local-dev-sa を使う。
+        credentials_path: SA 鍵 JSON ファイルパス。None なら local-dev-sa を
+            優先し、利用できない環境では ADC を使う。
     """
 
     def __init__(
@@ -116,9 +117,21 @@ class DeliveryLogger:
             scripts_dir = os.path.expanduser("~/.claude/scripts")
             if scripts_dir not in sys.path:
                 sys.path.insert(0, scripts_dir)
-            from gcp_auth import get_sheets_service  # type: ignore[import]
+            try:
+                from gcp_auth import get_sheets_service  # type: ignore[import]
+            except ImportError:
+                # Cloud Run 等、ローカル専用 gcp_auth がない環境では ADC を使う
+                import google.auth
+                from googleapiclient.discovery import build
 
-            self._service = get_sheets_service()
+                creds, _ = google.auth.default(
+                    scopes=["https://www.googleapis.com/auth/spreadsheets"]
+                )
+                self._service = build(
+                    "sheets", "v4", credentials=creds, cache_discovery=False
+                )
+            else:
+                self._service = get_sheets_service()
 
         return self._service
 
