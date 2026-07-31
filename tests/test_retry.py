@@ -1,6 +1,8 @@
 """retry_api_v2 の単体テスト"""
 import pytest
 import socket
+import tenacity
+import tenacity.nap
 from unittest.mock import Mock
 from momijian_common.retry import retry_api_v2
 from googleapiclient.errors import HttpError
@@ -80,19 +82,39 @@ def test_retry_compat_delay_kwarg():
     assert flaky() == "ok"
 
 
-def test_retry_max_total_seconds():
+def test_retry_max_total_seconds(monkeypatch):
     """max_total_seconds で累積時間を制御"""
-    import time
-    start = time.time()
+    class FakeClock:
+        def __init__(self):
+            self.now = 0.0
+            self.sleeps = []
+
+        def monotonic(self):
+            return self.now
+
+        def sleep(self, seconds):
+            self.sleeps.append(seconds)
+            self.now += seconds
+
+    clock = FakeClock()
+    monkeypatch.setattr(tenacity.time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(tenacity.nap.time, "sleep", clock.sleep)
+    monkeypatch.setattr("momijian_common.retry.random.uniform", lambda _a, b: b)
+
+    call_count = 0
 
     @retry_api_v2(max_retries=100, initial_delay=0.5, max_total_seconds=1.0)
     def always_fail():
+        nonlocal call_count
+        call_count += 1
         raise TimeoutError("t")
 
     with pytest.raises(TimeoutError):
         always_fail()
-    elapsed = time.time() - start
-    assert elapsed < 2.5  # max_total_seconds + jitter 余裕
+
+    assert call_count == 3
+    assert clock.sleeps == [0.5, 1.0]
+    assert clock.now == pytest.approx(1.5)
 
 
 def test_retry_invalidate_callback_called():
