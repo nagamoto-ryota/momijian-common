@@ -3,6 +3,9 @@ name: Reusable Test
 on:
   workflow_call:
     inputs:
+      app_dir:
+        type: string
+        default: "."
       python_version:
         type: string
         default: "3.11"
@@ -24,9 +27,11 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt pytest
+        working-directory: ${{ inputs.app_dir }}
 
       - name: Run tests
         run: pytest tests/ -v
+        working-directory: ${{ inputs.app_dir }}
         env:
           PYTHONPATH: .
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}

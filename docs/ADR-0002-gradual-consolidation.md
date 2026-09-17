@@ -92,3 +92,7 @@
 - ADR の先例: nursing-jobs `docs/ADR-0001-monorepo.md`（Job 集約 monorepo の採択）
 - デプロイ配線の事故史: `~/.claude/lessons/cicd-github.md`
 - reusable workflow 実体: 本リポ `.github/workflows/reusable-test.yml` / `reusable-deploy.yml`
+
+### `app_dir` input
+Both reusable workflows accept `app_dir` as a string input; its default is `"."`, preserving root-level callers.
+Monorepo callers should set `app_dir` to the application directory containing `requirements.txt`, `tests/`, and the Cloud Run source.
