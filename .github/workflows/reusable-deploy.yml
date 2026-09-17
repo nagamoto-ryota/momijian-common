@@ -3,6 +3,9 @@ name: Reusable Deploy
 on:
   workflow_call:
     inputs:
+      app_dir:
+        type: string
+        default: "."
       service_name:
         required: true
         type: string
@@ -62,7 +65,7 @@ jobs:
         with:
           service: ${{ inputs.service_name }}
           region: ${{ env.REGION }}
-          source: .
+          source: ${{ inputs.app_dir }}
           flags: ${{ inputs.cloud_run_flags }}
           env_vars: ${{ inputs.env_vars }}
           secrets: ${{ secrets.cloud_run_secrets }}
@@ -138,7 +141,7 @@ jobs:
         with:
           service: ${{ inputs.service_name }}
           region: ${{ env.REGION }}
-          source: .
+          source: ${{ inputs.app_dir }}
           flags: ${{ inputs.cloud_run_flags }} --no-traffic --tag pr-${{ github.event.number }}
 
       - name: Get ID Token for Preview Smoke Test
