@@ -108,7 +108,8 @@ jobs:
           fi
           for i in 1 2 3; do
             sleep 10
-            STATUS=$(eval curl -s -o /dev/null -w "%{http_code}" --max-time 10 $AUTH_HEADER "$URL")
+            # Allow cold starts and keep curl failures in the retry loop under bash -e.
+            STATUS=$(eval curl -s -o /dev/null -w "%{http_code}" --max-time 30 $AUTH_HEADER "$URL") || STATUS="000"
             echo "Attempt $i: HTTP $STATUS"
             if [ "$STATUS" = "200" ]; then
               echo "Smoke test passed (HTTP $STATUS)"
@@ -165,7 +166,8 @@ jobs:
           fi
           for i in 1 2 3; do
             sleep 10
-            STATUS=$(eval curl -s -o /dev/null -w "%{http_code}" --max-time 10 $AUTH_HEADER "$URL")
+            # Allow cold starts and keep curl failures in the retry loop under bash -e.
+            STATUS=$(eval curl -s -o /dev/null -w "%{http_code}" --max-time 30 $AUTH_HEADER "$URL") || STATUS="000"
             echo "Attempt $i: HTTP $STATUS"
             if [ "$STATUS" = "200" ]; then
               echo "Preview smoke test passed (HTTP $STATUS)"
